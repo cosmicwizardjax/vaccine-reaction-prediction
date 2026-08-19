@@ -1,0 +1,129 @@
+VACCINE REACTION PREDICTION
+ONLINE + OFFLINE DEPLOYMENT GUIDE
+=================================
+
+IMPORTANT:
+A ZIP file cannot create a permanent public internet link by itself.
+
+There are three different access modes:
+
+1) OFFLINE / LOCAL COMPUTER
+--------------------------------
+First time:
+  Double-click setup.bat
+
+Normal use:
+  Double-click run_app.bat
+  or
+  Double-click Open App Hidden.vbs
+
+This works without VS Code after setup.
+It can work without internet because the model is stored locally.
+
+If the computer is shut down, its local app is not available.
+
+
+2) OTHER DEVICES ON THE SAME WI-FI
+-----------------------------------
+Use:
+  run_app_network.bat
+
+The laptop must remain ON.
+
+The other phone/tablet/laptop must be on the same network.
+Use:
+  http://LAPTOP-IP:8501
+
+Example:
+  http://192.168.1.25:8501
+
+Windows Firewall may ask permission the first time.
+If Windows blocks it, allow Python on the private network.
+
+This is local network access, not a public internet link.
+
+
+3) PUBLIC ONLINE LINK (RECOMMENDED FOR PHONES / TABLETS)
+----------------------------------------------------------
+Deploy this project to a cloud service such as Streamlit Community Cloud.
+
+The public deployment is independent of your laptop:
+  Laptop OFF  -> public app can still work
+  VS Code OFF  -> public app can still work
+  Phone/tablet -> open the public HTTPS URL in a browser
+
+Streamlit Community Cloud:
+  https://streamlit.io/cloud
+
+Typical deployment process:
+  1. Create/sign in to a GitHub account.
+  2. Create a new GitHub repository.
+  3. Upload the contents of this project folder.
+  4. Do NOT upload .venv.
+  5. Open Streamlit Community Cloud.
+  6. Create a new app from the GitHub repository.
+  7. Select:
+       Main file path: app.py
+  8. Deploy.
+
+The platform will install packages from requirements.txt.
+
+The trained model files must be uploaded to the repository:
+  reaction_model.pkl
+  model_metadata.pkl
+  dashboard_stats.json
+
+Do NOT upload any patient-level Excel file.
+
+After deployment you will receive an HTTPS link similar to:
+  https://your-app-name.streamlit.app
+
+That link can be opened from laptops, phones and tablets with internet access.
+
+OFFLINE + ONLINE TOGETHER
+-------------------------
+You can keep this ZIP on your laptop for offline/local use while also
+having a cloud deployment for public access.
+
+The two versions are independent:
+  Local ZIP -> works locally
+  Cloud deployment -> works when your laptop is OFF
+
+MODEL / RESULT DISPLAY
+----------------------
+The patient-facing GUI intentionally:
+  - does not display accuracy
+  - does not display model probability scores
+  - does not display the "OTHER" catch-all class as the result
+  - selects the highest-scoring specific reaction category
+  - shows a simple caution that the result is dataset-based and is not
+    a diagnosis
+
+This is a presentation choice. It does NOT mean the model has become
+clinically accurate.
+
+MEDICAL LIMITATION
+------------------
+The tool is based on historical project data. It cannot establish that
+a vaccine caused an event and should not replace a healthcare professional.
+
+The application does not prescribe medicines or doses.
+
+PRIVACY
+-------
+The shareable package contains:
+  - trained model
+  - model metadata
+  - aggregate dashboard statistics
+
+It does not contain the patient-level Excel dataset.
+
+TRAINING
+--------
+Normal users do not need train_model.py.
+
+The training script expects the private development dataset:
+  data/final ugrc(1).xlsx
+
+Keep that dataset in your private development copy rather than uploading
+patient-level data to a public repository.

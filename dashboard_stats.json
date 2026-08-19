@@ -1,0 +1,106 @@
+{
+  "vaccine_counts": {
+    "COVISHIELD": 2217,
+    "COVAXIN": 355,
+    "CORBEVAX": 145,
+    "SPUTNIK V": 3
+  },
+  "sex_counts": {
+    "FEMALE": 1361,
+    "MALE": 1359
+  },
+  "diagnosis_counts": {
+    "OTHER REPORTED REACTION (PRESENT IN DATASET)": 1812,
+    "ANXIETY REACTION": 223,
+    "UNEXPLAINED DEATH": 195,
+    "ALLERGIC REACTION": 89,
+    "GUILLAIN BARRE SYNDROME": 86,
+    "ANAPHYLAXIS": 62,
+    "COVID 19 DISEASE": 55,
+    "SUDDEN CARDIAC DEATH": 53,
+    "ERROR IN ADMINISTRATION": 46,
+    "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": 35,
+    "FEVER": 25
+  },
+  "age_group_counts": {
+    "UNDER 18": 283,
+    "18-30": 449,
+    "31-44": 516,
+    "45-59": 609,
+    "60+": 827,
+    "UNKNOWN": 36
+  },
+  "vaccine_sex": {
+    "CORBEVAX": {
+      "FEMALE": 87,
+      "MALE": 58
+    },
+    "COVAXIN": {
+      "FEMALE": 163,
+      "MALE": 192
+    },
+    "COVISHIELD": {
+      "FEMALE": 1111,
+      "MALE": 1106
+    },
+    "SPUTNIK V": {
+      "FEMALE": 0,
+      "MALE": 3
+    }
+  },
+  "vaccination_year_counts": {
+    "0": 39,
+    "2021": 2311,
+    "2022": 370
+  },
+  "top_diagnosis_by_vaccine": {
+    "CORBEVAX": {
+      "OTHER REPORTED REACTION (PRESENT IN DATASET)": 45,
+      "ANXIETY REACTION": 44,
+      "UNEXPLAINED DEATH": 1,
+      "ALLERGIC REACTION": 8,
+      "GUILLAIN BARRE SYNDROME": 4,
+      "ANAPHYLAXIS": 3,
+      "COVID 19 DISEASE": 0,
+      "SUDDEN CARDIAC DEATH": 0,
+      "ERROR IN ADMINISTRATION": 39,
+      "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": 0
+    },
+    "COVAXIN": {
+      "OTHER REPORTED REACTION (PRESENT IN DATASET)": 231,
+      "ANXIETY REACTION": 40,
+      "UNEXPLAINED DEATH": 24,
+      "ALLERGIC REACTION": 10,
+      "GUILLAIN BARRE SYNDROME": 17,
+      "ANAPHYLAXIS": 11,
+      "COVID 19 DISEASE": 8,
+      "SUDDEN CARDIAC DEATH": 5,
+      "ERROR IN ADMINISTRATION": 7,
+      "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": 2
+    },
+    "COVISHIELD": {
+      "OTHER REPORTED REACTION (PRESENT IN DATASET)": 1534,
+      "ANXIETY REACTION": 139,
+      "UNEXPLAINED DEATH": 169,
+      "ALLERGIC REACTION": 71,
+      "GUILLAIN BARRE SYNDROME": 65,
+      "ANAPHYLAXIS": 48,
+      "COVID 19 DISEASE": 47,
+      "SUDDEN CARDIAC DEATH": 48,
+      "ERROR IN ADMINISTRATION": 0,
+      "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": 33
+    },
+    "SPUTNIK V": {
+      "OTHER REPORTED REACTION (PRESENT IN DATASET)": 2,
+      "ANXIETY REACTION": 0,
+      "UNEXPLAINED DEATH": 1,
+      "ALLERGIC REACTION": 0,
+      "GUILLAIN BARRE SYNDROME": 0,
+      "ANAPHYLAXIS": 0,
+      "COVID 19 DISEASE": 0,
+      "SUDDEN CARDIAC DEATH": 0,
+      "ERROR IN ADMINISTRATION": 0,
+      "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": 0
+    }
+  }
+}
