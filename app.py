@@ -1,106 +1,144 @@
-import json
-from datetime import date
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
 from pathlib import Path
 
-import joblib
-import pandas as pd
-import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
+try:
+    from catboost import CatBoostClassifier
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
 
 # ============================================================
-# FILES
+# SETTINGS
 # ============================================================
-
-BASE = Path(__file__).resolve().parent
-MODEL_FILE = BASE / "reaction_model.pkl"
-METADATA_FILE = BASE / "model_metadata.pkl"
-STATS_FILE = BASE / "dashboard_stats.json"
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PKL_FILE = BASE_DIR / "reaction_model.pkl"
+MODEL_CBM_FILE = BASE_DIR / "reaction_model.cbm"
+METADATA_FILE = BASE_DIR / "model_metadata.pkl"
+DATA_FILE = BASE_DIR / "data" / "final ugrc(1).xlsx"
+SHEET_NAME = "compiled data all"
 
 OTHER_LABEL = "OTHER REPORTED REACTION (PRESENT IN DATASET)"
+TOP_N_REACTIONS = 3
 
-# Historical ranges represented in the project dataset.
-DATA_MIN_AGE, DATA_MAX_AGE = 12, 97
-DATA_MIN_DATE, DATA_MAX_DATE = date(2021, 1, 3), date(2022, 12, 2)
+REASON_OUTCOME_OPTIONS = [
+    "DEATH",
+    "HOSPITALIZED AND RECOVERED",
+    "SEVERE AND RECOVERED",
+    "HOSPITALIZATION AND RECOVERED",
+    "HOSPITALIZED & RECOVERED",
+    "CLUSTER SIGNIFICANT P/C/HP CONCERN AND RECOVERED",
+    "CLUSTER-HOSPITALIZED AND RECOVERED",
+    "SEVERE & RECOVERED",
+    "HOSPITALI ZED AND RECOVER ED",
+    "SEVERE AND RECEOVERED",
+    "HOSPITALIZED AND DEATH",
+    "CLUSTER-HOSPITALIZED",
+]
 
+# ============================================================
+# PAGE STYLE
+# ============================================================
 st.set_page_config(
     page_title="Vaccine Reaction Prediction",
     page_icon="💉",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
+)
+
+st.markdown(
+    """
+    <style>
+    .hero {
+        background: linear-gradient(110deg, #0d2740, #167b8c);
+        color: white;
+        padding: 28px 34px;
+        border-radius: 0 0 30px 30px;
+        margin-bottom: 16px;
+    }
+    .hero h1 { margin: 0; font-size: 2.35rem; }
+    .hero p { margin: 14px 0 0; font-size: 1rem; opacity: .92; }
+    .notice {
+        background: #e8f2ff;
+        color: #07549a;
+        padding: 16px 18px;
+        border-radius: 9px;
+        margin: 10px 0 18px;
+    }
+    .section-title { margin-top: 8px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="hero">
+      <h1>💉 Vaccine Reaction Prediction</h1>
+      <p>Dataset-based prediction • interactive analytics • personalized safety guidance • offline-ready</p>
+    </div>
+    <div class="notice">
+      This application provides a dataset-based prediction category. It is not a diagnosis and does not prove that a vaccine caused an event. Do not use it as a substitute for professional medical care.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 # ============================================================
-# STYLE
+# MODEL
 # ============================================================
-
-st.markdown("""
-<style>
-.block-container {max-width: 1280px; padding-top: 1.15rem;}
-.hero {
-  padding: 1.8rem 1.9rem;
-  border-radius: 24px;
-  background: linear-gradient(135deg,#08111f 0%,#12395b 52%,#17768d 100%);
-  color:#fff; margin-bottom:1rem;
-  box-shadow:0 14px 38px rgba(15,23,42,.16);
-}
-.hero h1 {margin:0;font-size:2.55rem;letter-spacing:-.035em;}
-.hero p {margin:.5rem 0 0;opacity:.9;font-size:1.04rem;}
-.pred-main {
-  padding: 1.55rem 1.5rem;
-  border-radius: 22px;
-  background: linear-gradient(135deg,#f7fbff,#eaf7f8);
-  border:1px solid #c9e4ea;
-  margin:.75rem 0 1rem;
-  box-shadow:0 8px 24px rgba(15,23,42,.06);
-  text-align:center;
-}
-.pred-main .label {font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;color:#64748b;}
-.pred-main .reaction {font-size:2rem;font-weight:800;line-height:1.2;margin-top:.4rem;}
-.caution {
-  padding:1rem 1.15rem;border-radius:16px;
-  background:#fffbeb;border:1px solid #fde68a;
-  color:#713f12;margin:.65rem 0;
-}
-.alert-red {padding:1rem 1.15rem;border-radius:15px;background:#fff1f2;border:1px solid #fecdd3;}
-.alert-amber {padding:1rem 1.15rem;border-radius:15px;background:#fffbeb;border:1px solid #fde68a;}
-.alert-green {padding:1rem 1.15rem;border-radius:15px;background:#f0fdf4;border:1px solid #bbf7d0;}
-.small {font-size:.88rem;color:#64748b;}
-.metric-card {
-  padding:1rem;border-radius:16px;border:1px solid #dbe4ee;
-  background:#fff;text-align:center;box-shadow:0 4px 15px rgba(15,23,42,.04);
-}
-.metric-card .num {font-size:1.55rem;font-weight:800;}
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# LOAD MODEL / DATA
-# ============================================================
-
 @st.cache_resource
-def load_model():
-    return joblib.load(MODEL_FILE)
+def load_model_and_metadata():
+    metadata = joblib.load(METADATA_FILE)
+    model_type = metadata.get("model_type", "Extra Trees")
+    if model_type == "CatBoost":
+        if not CATBOOST_AVAILABLE:
+            raise ImportError("CatBoost is required to load this model. Install it using: python -m pip install catboost")
+        model = CatBoostClassifier()
+        model.load_model(str(MODEL_CBM_FILE))
+    else:
+        model = joblib.load(MODEL_PKL_FILE)
+    return model, metadata
 
-@st.cache_data
-def load_metadata():
-    return joblib.load(METADATA_FILE)
-
-@st.cache_data
-def load_stats():
-    if STATS_FILE.exists():
-        return json.loads(STATS_FILE.read_text(encoding="utf-8"))
-    return {}
-
-model = load_model()
-metadata = load_metadata()
-stats = load_stats()
+try:
+    model, metadata = load_model_and_metadata()
+except Exception as e:
+    st.error("Unable to load the trained model.")
+    st.exception(e)
+    st.stop()
 
 # ============================================================
-# FEATURES
+# DATASET FOR ANALYTICS
 # ============================================================
+@st.cache_data
+def load_dataset():
+    if not DATA_FILE.exists():
+        return None
+    df = pd.read_excel(DATA_FILE, sheet_name=SHEET_NAME)
+    df.columns = (
+        df.columns.astype(str)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
+    return df
 
-def age_group(age):
+dataset = load_dataset()
+
+# ============================================================
+# HELPERS
+# ============================================================
+def clean_series(series):
+    return (
+        series.astype("string")
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+        .str.upper()
+    )
+
+
+def get_age_group(age):
     if age < 18:
         return "UNDER 18"
     if age <= 30:
@@ -111,551 +149,291 @@ def age_group(age):
         return "45-59"
     return "60+"
 
-def make_input(age, sex, vaccine, vaccination_date):
-    d = pd.Timestamp(vaccination_date)
-    ag = age_group(age)
 
+def create_input(age, sex, vaccine, reason_outcome):
+    age_group = get_age_group(age)
     return pd.DataFrame([{
         "AGE (IN YEARS)": float(age),
-        "SEX": sex,
-        "VACCINE": vaccine,
-        "AGE_GROUP": ag,
-        "VACCINATION_YEAR": str(d.year),
-        "VACCINATION_MONTH": str(d.month),
-        "VACCINATION_QUARTER": str(d.quarter),
-        "VACCINE_AGE_GROUP": f"{vaccine}_{ag}",
+        "SEX": str(sex),
+        "VACCINE": str(vaccine),
+        "AGE_GROUP": str(age_group),
+        "REASON FOR REPORTING/ OUTCOME": str(reason_outcome),
+        "VACCINE_AGE_GROUP": f"{vaccine}_{age_group}",
         "VACCINE_SEX": f"{vaccine}_{sex}",
     }])
 
-# ============================================================
-# PREDICTION
-# ============================================================
 
-def get_specific_prediction(X):
-    """
-    The training dataset contains a very large OTHER class.
-    For the patient-facing result we deliberately exclude that
-    catch-all class and select the highest-scoring specific
-    reaction category.
+def get_risk_level(probability):
+    p = probability * 100
+    if p >= 50:
+        return "HIGH"
+    if p >= 20:
+        return "MODERATE"
+    return "LOW"
 
-    This is NOT a probability of the patient developing the event.
-    It is simply the model's closest specific category among the
-    categories represented separately in the training data.
-    """
-    probs = model.predict_proba(X)[0]
-    classes = list(model.classes_)
 
-    specific = [
-        (str(label), float(prob))
-        for label, prob in zip(classes, probs)
-        if str(label).strip() != OTHER_LABEL
+def format_reaction_name(reaction):
+    reaction = str(reaction).strip()
+    if reaction == OTHER_LABEL:
+        return "OTHER REPORTED REACTION"
+    return reaction
+
+
+def get_top_reactions(model, X, top_n=TOP_N_REACTIONS):
+    probabilities = np.asarray(model.predict_proba(X)[0], dtype=float)
+    classes = np.asarray(model.classes_)
+    sorted_indices = np.argsort(probabilities)[::-1]
+    top_indices = sorted_indices[:min(top_n, len(sorted_indices))]
+    rows = []
+    for rank, index in enumerate(top_indices, start=1):
+        probability = float(probabilities[index])
+        rows.append({
+            "Rank": rank,
+            "Reaction": format_reaction_name(classes[index]),
+            "Probability": probability,
+            "Probability (%)": probability * 100,
+            "Risk Level": get_risk_level(probability),
+        })
+    return pd.DataFrame(rows)
+
+
+def get_reaction_guidance(reaction):
+    key = str(reaction).strip().upper()
+    guidance = {
+        "ANAPHYLAXIS": "If there is breathing difficulty, throat/tongue swelling, fainting, or rapid worsening, seek emergency medical care immediately.",
+        "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME": "Severe/persistent headache, abdominal or chest pain, leg swelling, shortness of breath, unusual bruising or bleeding require urgent medical assessment.",
+        "SUDDEN CARDIAC DEATH": "This is a serious dataset category. Collapse, chest pain, severe breathlessness, or loss of consciousness requires emergency medical services.",
+        "GUILLAIN BARRE SYNDROME": "Progressive weakness, difficulty walking, numbness/tingling, or breathing difficulty requires prompt medical assessment.",
+        "FEVER": "Monitor temperature, rest and maintain fluids as tolerated. Seek medical advice if symptoms are severe, persistent, or worsening.",
+        "ALLERGIC REACTION": "Monitor mild rash/itching and contact a healthcare professional for advice. Facial/throat swelling, breathing difficulty, fainting, or rapid worsening is an emergency.",
+        "ANXIETY REACTION": "Provide reassurance and a calm environment. If symptoms are severe, persistent, or accompanied by chest pain, fainting, or breathing difficulty, seek medical assessment.",
+        "COVID 19 DISEASE": "If compatible respiratory or other symptoms are present, contact a healthcare professional about testing and care.",
+        "ERROR IN ADMINISTRATION": "Do not attempt to correct an administration error independently. Document it and seek assessment according to the applicable AEFI procedure.",
+        "ACUTE FEBRILE REACTION": "Monitor fever and associated symptoms, maintain fluids as tolerated, and seek clinical assessment if symptoms are severe, persistent, or worsening.",
+        "ACUTE GASTROENTERITIS": "Maintain fluids as tolerated and monitor for dehydration or worsening symptoms. Seek medical assessment for persistent vomiting/diarrhoea or other concerning symptoms.",
+        "VASOVAGAL SYNCOPE": "If fainting or near-fainting occurs, ensure a safe position and seek medical assessment, especially for recurrent episodes, injury, chest pain, or breathing difficulty.",
+    }
+    return guidance.get(key, "The model identified this as a possible dataset category. Do not treat the prediction as a diagnosis. If symptoms are present, worsening, or concerning, seek assessment from a qualified healthcare professional.")
+
+
+def get_general_precautions(top_reactions):
+    reactions = {str(x).strip().upper() for x in top_reactions["Reaction"]}
+    precautions = [
+        "This is a dataset-based prediction, not a diagnosis or confirmation that the reaction will occur.",
+        "Observe the person's actual symptoms and clinical condition; do not act on the prediction alone.",
+        "For severe or rapidly worsening symptoms, seek urgent medical assessment/emergency care.",
+        "Record the vaccine, timing of symptoms, symptoms observed, and outcome information for discussion with a healthcare professional.",
     ]
-
-    specific.sort(key=lambda x: x[1], reverse=True)
-
-    if not specific:
-        return "REACTION CATEGORY NOT AVAILABLE", 0.0, []
-
-    top_label, top_score = specific[0]
-    return top_label.strip(), top_score, specific
+    if "ANAPHYLAXIS" in reactions:
+        precautions.append("Breathing difficulty, throat/tongue swelling, fainting, or rapid deterioration should be treated as an emergency.")
+    if "GUILLAIN BARRE SYNDROME" in reactions or "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME" in reactions:
+        precautions.append("Do not delay clinical evaluation for progressive neurological symptoms, severe persistent headache, breathing difficulty, significant swelling, or unusual bleeding/bruising.")
+    return precautions
 
 # ============================================================
-# SAFETY / GUIDANCE
+# TABS
 # ============================================================
-
-def safety_alerts(age, vaccine, vaccination_date, reaction):
-    alerts = []
-
-    if age < DATA_MIN_AGE or age > DATA_MAX_AGE:
-        alerts.append((
-            "amber",
-            f"Age {age} is outside the dataset's observed range "
-            f"({DATA_MIN_AGE}-{DATA_MAX_AGE} years). The model is extrapolating."
-        ))
-
-    if vaccination_date < DATA_MIN_DATE or vaccination_date > DATA_MAX_DATE:
-        alerts.append((
-            "amber",
-            "The vaccination date is outside the historical date range "
-            "represented in this project dataset. Interpret the result cautiously."
-        ))
-
-    r = reaction.upper()
-    severe_terms = [
-        "ANAPHYLAXIS", "SUDDEN CARDIAC", "MYOCARDIAL", "CORONARY",
-        "THROMBOSIS", "THROMBOCYTOPENIA", "GUILLAIN",
-        "CEREBROVASCULAR", "SEIZURE", "UNEXPLAINED DEATH"
-    ]
-
-    if any(x in r for x in severe_terms):
-        alerts.append((
-            "red",
-            "This category can represent a potentially serious event. "
-            "If the person currently has severe or rapidly worsening symptoms, "
-            "seek urgent medical assessment rather than relying on this tool."
-        ))
-
-    # Always provide one simple, non-alarming caution.
-    alerts.append((
-        "amber",
-        "This result is based only on patterns in the project's historical dataset. "
-        "The model has done its best to identify the closest specific category, "
-        "but this is not a diagnosis and should not replace advice from a healthcare professional."
-    ))
-
-    return alerts
-
-def guidance(reaction):
-    r = reaction.upper()
-
-    if "ANAPHYLAXIS" in r or "ALLERGIC" in r:
-        return (
-            "Urgent medical assessment is appropriate for breathing difficulty, "
-            "swelling of the face/throat, widespread hives, collapse, or rapidly worsening symptoms."
-        )
-
-    if "CARDIAC" in r or "MYOCARDIAL" in r or "CORONARY" in r:
-        return (
-            "Chest pain, severe breathlessness, fainting, or sudden deterioration "
-            "warrants urgent medical evaluation."
-        )
-
-    if "THROMBOSIS" in r or "THROMBOCYTOPENIA" in r:
-        return (
-            "Seek prompt medical assessment for severe headache, new neurological symptoms, "
-            "chest pain, breathlessness, leg swelling/pain, or unusual bleeding."
-        )
-
-    if "GUILLAIN" in r or "PALSY" in r or "CEREBROVASCULAR" in r or "SEIZURE" in r:
-        return (
-            "New weakness, facial drooping, difficulty speaking/walking, seizure, "
-            "or rapidly progressing neurological symptoms require urgent assessment."
-        )
-
-    if "FEVER" in r or "FEBRILE" in r:
-        return (
-            "Rest, maintain fluids, monitor symptoms, and contact a healthcare professional "
-            "if symptoms are severe, persistent, or worsening."
-        )
-
-    if "ANXIETY" in r or "VASOVAGAL" in r or "CONVERSION" in r:
-        return (
-            "Sit or lie down safely, avoid driving while symptomatic, and seek assessment "
-            "if fainting, persistent symptoms, or severe symptoms occur."
-        )
-
-    return (
-        "The correct treatment depends on the actual clinical diagnosis. "
-        "A healthcare professional should evaluate the symptoms before treatment is selected."
-    )
-
-def resource_links(age, vaccine, reaction):
-    links = [
-        (
-            "WHO — Vaccine safety",
-            "https://www.who.int/news-room/questions-and-answers/item/vaccines-and-immunization-vaccine-safety"
-        ),
-        (
-            "WHO — Vaccines and immunization",
-            "https://www.who.int/health-topics/vaccines-and-immunization/"
-        ),
-    ]
-
-    if "ANAPHYLAXIS" in reaction.upper() or "ALLERGIC" in reaction.upper():
-        links.insert(
-            0,
-            (
-                "WHO — Vaccine safety information",
-                "https://www.who.int/news-room/questions-and-answers/item/vaccines-and-immunization-vaccine-safety"
-            )
-        )
-
-    if age >= 60:
-        links.append(
-            (
-                "WHO — Vaccines and immunization",
-                "https://www.who.int/health-topics/vaccines-and-immunization/"
-            )
-        )
-
-    return links
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown("""
-<div class="hero">
-<h1>💉 Vaccine Reaction Prediction</h1>
-<p>Dataset-based prediction • interactive analytics • personalized safety guidance • offline-ready</p>
-</div>
-""", unsafe_allow_html=True)
-
-st.info(
-    "This application provides a dataset-based prediction category. "
-    "It is not a diagnosis and does not prove that a vaccine caused an event. "
-    "Do not use it as a substitute for professional medical care."
-)
-
-tabs = st.tabs([
-    "🔎 Predict",
-    "📊 Interactive Analytics",
-    "🛡️ Safety & Resources",
-    "ℹ️ Project"
+tab_predict, tab_analytics, tab_safety, tab_project = st.tabs([
+    "🔎 Predict", "📊 Interactive Analytics", "🛡️ Safety & Resources", "ℹ️ Project"
 ])
 
 # ============================================================
-# PREDICTION TAB
+# PREDICT
 # ============================================================
-
-with tabs[0]:
-    st.subheader("Enter patient & vaccination details")
-
-    c1, c2, c3 = st.columns(3)
-
+with tab_predict:
+    st.markdown("## Enter patient & vaccination details")
+    c1, c2, c3 = st.columns([1.1, 1, 1])
     with c1:
-        vaccine = st.selectbox(
-            "Vaccine",
-            ["COVISHIELD", "COVAXIN", "CORBEVAX", "SPUTNIK V"]
-        )
-
+        vaccine = st.selectbox("Vaccine", ["COVISHIELD", "COVAXIN", "CORBEVAX", "SPUTNIK V"])
     with c2:
-        age = st.number_input(
-            "Age (years)",
-            min_value=1,
-            max_value=120,
-            value=45,
-            step=1
-        )
-
+        age = st.number_input("Age (years)", min_value=1, max_value=120, value=45, step=1)
     with c3:
         sex = st.selectbox("Sex", ["MALE", "FEMALE"])
 
-    vaccination_date = st.date_input(
-        "Vaccination date",
-        value=date(2022, 1, 1),
-        min_value=date(2020, 1, 1),
-        max_value=date.today()
+    reason_outcome = st.selectbox(
+        "Reason for Reporting / Outcome",
+        ["— Select —"] + REASON_OUTCOME_OPTIONS,
+        index=0,
+        help="Options are derived from the compiled AEFI dataset after whitespace/newline normalization.",
     )
 
-    if st.button(
-        "✨ Predict Possible Reaction",
-        type="primary",
-        use_container_width=True
-    ):
-        X = make_input(age, sex, vaccine, vaccination_date)
-        reaction, internal_score, all_specific = get_specific_prediction(X)
+    predict_clicked = st.button("✨ Predict Possible Reactions", type="primary", use_container_width=True)
 
-        st.session_state.reaction = reaction
-        st.session_state.internal_score = internal_score
-        st.session_state.input = {
-            "age": age,
-            "sex": sex,
-            "vaccine": vaccine,
-            "date": vaccination_date,
-        }
+    if predict_clicked:
+        if reason_outcome == "— Select —":
+            st.warning("Please select a Reason for Reporting / Outcome before prediction.")
+            st.stop()
 
-    if "reaction" in st.session_state:
-        reaction = st.session_state.reaction
-        inp = st.session_state.input
+        X = create_input(age, sex, vaccine, reason_outcome)
+        try:
+            top_reactions = get_top_reactions(model, X)
+        except Exception as e:
+            st.error("Error while generating predictions.")
+            st.exception(e)
+            st.stop()
 
-        st.subheader("Prediction")
+        st.divider()
+        st.subheader("📊 Top 3 Possible Predicted Reactions")
+        st.caption("These are the three highest model-probability classes for the entered features. They are not a clinical diagnosis.")
 
-        st.markdown(
-            f"""
-            <div class="pred-main">
-                <div class="label">Dataset-based model result</div>
-                <div class="reaction">{reaction} MAY OCCUR</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        for _, row in top_reactions.iterrows():
+            rank = int(row["Rank"])
+            reaction = row["Reaction"]
+            probability = float(row["Probability"])
+            percentage = float(row["Probability (%)"])
+            likelihood = row["Risk Level"]
+            st.markdown(f"### {medals.get(rank, '•')} #{rank} — {reaction}")
+            m1, m2 = st.columns(2)
+            with m1:
+                st.metric("Model Probability", f"{percentage:.2f}%")
+            with m2:
+                st.metric("Likelihood Category", likelihood)
+            st.progress(min(max(probability, 0.0), 1.0))
 
-        # Deliberately do not display model accuracy or probability scores.
-        for level, msg in safety_alerts(
-            inp["age"], inp["vaccine"], inp["date"], reaction
-        ):
-            css = {
-                "red": "alert-red",
-                "amber": "alert-amber",
-                "green": "alert-green"
-            }[level]
+        st.divider()
+        st.subheader("💡 Advice / Suggestion Based on Predicted Reaction")
+        primary_reaction = top_reactions.iloc[0]["Reaction"]
+        st.info(f"**Primary model prediction: {primary_reaction}**\n\n{get_reaction_guidance(primary_reaction)}")
 
-            icon = "🚨" if level == "red" else "⚠️" if level == "amber" else "✓"
+        with st.expander("View guidance for Prediction #2 and #3"):
+            for _, row in top_reactions.iloc[1:].iterrows():
+                st.markdown(f"**#{int(row['Rank'])} — {row['Reaction']}**")
+                st.write(get_reaction_guidance(row["Reaction"]))
 
-            st.markdown(
-                f'<div class="{css}">{icon} {msg}</div>',
-                unsafe_allow_html=True
-            )
+        st.subheader("🛡️ General Precautions")
+        for precaution in get_general_precautions(top_reactions):
+            st.markdown(f"• {precaution}")
 
-        st.subheader("General precautions")
-        st.write(guidance(reaction))
+        st.subheader("📋 Prediction Summary")
+        summary_df = top_reactions[["Rank", "Reaction", "Probability (%)", "Risk Level"]].copy()
+        summary_df["Probability (%)"] = summary_df["Probability (%)"].map(lambda x: f"{x:.2f}%")
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-        st.caption(
-            "The application does not prescribe medicines or doses. "
-            "Treatment should be based on a clinician's assessment."
-        )
-
-        st.subheader("Relevant official resources")
-        for label, url in resource_links(
-            inp["age"], inp["vaccine"], reaction
-        ):
-            st.markdown(f"🔗 [{label}]({url})")
-
-        report = f"""Vaccine Reaction Prediction Report
-
-Inputs:
-Age: {inp["age"]}
-Sex: {inp["sex"]}
-Vaccine: {inp["vaccine"]}
-Vaccination date: {inp["date"]}
-
-Model result:
-{reaction} MAY OCCUR
-
-Caution:
-This is a dataset-based model result, not a medical diagnosis.
-Please consult a healthcare professional and do not rely on this result alone.
-"""
-
-        st.download_button(
-            "⬇️ Save result summary",
-            report,
-            "vaccine_reaction_result.txt",
-            "text/plain"
-        )
+        st.warning("⚠️ This application provides dataset-based decision support only. A prediction does not establish causality, diagnosis, or that an event will occur. For emergencies, seek emergency medical services immediately.")
 
 # ============================================================
-# ANALYTICS TAB
+# INTERACTIVE ANALYTICS
 # ============================================================
-
-with tabs[1]:
-    st.subheader("Interactive dataset analytics")
-    st.caption(
-        "These charts use aggregate project statistics. "
-        "They do not display individual patient records."
-    )
-
-    vaccine_counts = stats.get("vaccine_counts", {})
-    v = pd.DataFrame({
-        "Vaccine": list(vaccine_counts.keys()),
-        "Records": list(vaccine_counts.values())
-    })
-
-    if not v.empty:
-        c1, c2 = st.columns(2)
-
-        with c1:
-            fig = px.pie(
-                v,
-                names="Vaccine",
-                values="Records",
-                hole=.55,
-                title="Vaccine distribution"
-            )
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-            st.plotly_chart(fig, use_container_width=True)
-
-        with c2:
-            fig = px.treemap(
-                v,
-                path=["Vaccine"],
-                values="Records",
-                title="Vaccine volume"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    diagnosis_counts = stats.get("diagnosis_counts", {})
-    specific_diagnoses = {
-        k: v for k, v in diagnosis_counts.items()
-        if str(k).strip() != OTHER_LABEL
-    }
-
-    d = pd.DataFrame({
-        "Reaction": list(specific_diagnoses.keys()),
-        "Records": list(specific_diagnoses.values())
-    })
-
-    if not d.empty:
-        st.markdown("### Specific reaction categories in the dataset")
-
-        fig = px.bar(
-            d.sort_values("Records"),
-            x="Records",
-            y="Reaction",
-            orientation="h",
-            title="Specific reaction categories",
-            text="Records"
-        )
-        fig.update_layout(yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            fig = px.pie(
-                d.sort_values("Records", ascending=False).head(8),
-                names="Reaction",
-                values="Records",
-                hole=.45,
-                title="Top specific categories"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        with c2:
-            fig = px.treemap(
-                d.sort_values("Records", ascending=False),
-                path=["Reaction"],
-                values="Records",
-                title="Reaction-category treemap"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    age_counts = stats.get("age_group_counts", {})
-    a = pd.DataFrame({
-        "Age group": list(age_counts.keys()),
-        "Records": list(age_counts.values())
-    })
-
-    if not a.empty:
-        fig = px.pie(
-            a,
-            names="Age group",
-            values="Records",
-            hole=.45,
-            title="Age-group distribution"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    heat = stats.get("vaccine_sex", {})
-    if heat:
-        h = pd.DataFrame(heat).T.fillna(0)
-
-        fig = px.imshow(
-            h,
-            text_auto=True,
-            aspect="auto",
-            title="Vaccine × sex distribution",
-            labels={"x": "Sex", "y": "Vaccine", "color": "Records"}
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    years = stats.get("vaccination_year_counts", {})
-    if years:
-        ydf = pd.DataFrame({
-            "Year": [str(k) for k in years],
-            "Records": [years[k] for k in years]
-        })
-
-        fig = go.Figure(
-            go.Scatter(
-                x=ydf["Year"],
-                y=ydf["Records"],
-                mode="lines+markers",
-                hovertemplate="Year: %{x}<br>Records: %{y}<extra></extra>"
-            )
-        )
-
-        fig.update_layout(
-            title="Vaccination records by year",
-            xaxis_title="Year",
-            yaxis_title="Records"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================
-# SAFETY TAB
-# ============================================================
-
-with tabs[2]:
-    st.subheader("Safety alerts & trusted resources")
-
-    if "reaction" in st.session_state:
-        inp = st.session_state.input
-        reaction = st.session_state.reaction
-
-        for level, msg in safety_alerts(
-            inp["age"], inp["vaccine"], inp["date"], reaction
-        ):
-            css = {
-                "red": "alert-red",
-                "amber": "alert-amber",
-                "green": "alert-green"
-            }[level]
-
-            st.markdown(
-                f'<div class="{css}">{msg}</div>',
-                unsafe_allow_html=True
-            )
-
-        st.markdown("### Resources relevant to this result")
-
-        for label, url in resource_links(
-            inp["age"], inp["vaccine"], reaction
-        ):
-            st.markdown(f"🔗 [{label}]({url})")
-
+with tab_analytics:
+    st.markdown("## 📊 Interactive Analytics")
+    if dataset is None:
+        st.warning(f"Analytics dataset was not found at: {DATA_FILE}")
+        st.info("Keep the Excel file in the project's data folder as 'final ugrc(1).xlsx' for the analytics tab to populate.")
     else:
-        st.write(
-            "Run a prediction first to generate input-specific safety alerts "
-            "and resource suggestions."
-        )
+        df = dataset.copy()
+        for col in ["SEX", "VACCINE", "REASON FOR REPORTING/ OUTCOME", "DIAGNOSIS", "CLASSIFICATION* BY NATIONAL AEFI COMMITTEE"]:
+            if col in df.columns:
+                df[col] = clean_series(df[col])
+        if "AGE (IN YEARS)" in df.columns:
+            df["AGE (IN YEARS)"] = pd.to_numeric(df["AGE (IN YEARS)"], errors="coerce")
 
-    st.markdown("### Emergency warning signs")
-    st.write(
-        "Seek urgent care for severe breathing difficulty, swelling of the "
-        "face/throat, collapse, severe chest pain, seizure, new major neurological "
-        "symptoms, or rapidly worsening symptoms."
-    )
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total Records", f"{len(df):,}")
+        k2.metric("Vaccines", f"{df['VACCINE'].nunique():,}" if "VACCINE" in df.columns else "N/A")
+        k3.metric("Age Groups", f"{df['AGE (IN YEARS)'].notna().sum():,}" if "AGE (IN YEARS)" in df.columns else "N/A")
+        k4.metric("Reaction Categories", f"{df['DIAGNOSIS'].nunique():,}" if "DIAGNOSIS" in df.columns else "N/A")
+
+        a1, a2 = st.columns(2)
+        with a1:
+            st.markdown("### Vaccine Distribution")
+            if "VACCINE" in df.columns:
+                st.bar_chart(df["VACCINE"].value_counts().head(15))
+        with a2:
+            st.markdown("### Sex Distribution")
+            if "SEX" in df.columns:
+                st.bar_chart(df["SEX"].value_counts())
+
+        b1, b2 = st.columns(2)
+        with b1:
+            st.markdown("### Age Group Distribution")
+            if "AGE (IN YEARS)" in df.columns:
+                age_groups = pd.cut(
+                    df["AGE (IN YEARS)"],
+                    bins=[-np.inf, 17, 30, 44, 59, np.inf],
+                    labels=["UNDER 18", "18-30", "31-44", "45-59", "60+"],
+                ).value_counts().sort_index()
+                st.bar_chart(age_groups)
+        with b2:
+            st.markdown("### Reporting / Outcome")
+            if "REASON FOR REPORTING/ OUTCOME" in df.columns:
+                st.bar_chart(df["REASON FOR REPORTING/ OUTCOME"].value_counts().head(15))
+
+        st.markdown("### Top Reported Reaction Categories")
+        if "DIAGNOSIS" in df.columns:
+            st.bar_chart(df["DIAGNOSIS"].value_counts().head(15))
+
+        if "CLASSIFICATION* BY NATIONAL AEFI COMMITTEE" in df.columns:
+            st.markdown("### AEFI Classification")
+            st.bar_chart(df["CLASSIFICATION* BY NATIONAL AEFI COMMITTEE"].value_counts().head(15))
+
+        st.markdown("### Dataset Preview")
+        # Convert preview values to text so mixed date/string columns render safely in Streamlit
+        # (especially DATE OF VACCINATION (DD/MM/YYYY)).
+        preview_df = df.head(25).copy()
+        for col in preview_df.columns:
+            preview_df[col] = preview_df[col].map(lambda x: x.strftime("%d/%m/%Y") if hasattr(x, "strftime") else ("" if pd.isna(x) else str(x)))
+        st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
 # ============================================================
-# ABOUT TAB
+# SAFETY & RESOURCES
 # ============================================================
+with tab_safety:
+    st.markdown("## 🛡️ Safety & Resources")
+    st.warning("The application is a dataset-based decision-support tool. It cannot diagnose a patient or establish that a vaccine caused an event.")
 
-with tabs[3]:
-    st.subheader("About this application")
+    st.markdown("### General precautions")
+    for item in [
+        "Use the prediction only as an informational aid and consider the person's actual symptoms and history.",
+        "Do not delay emergency care because of a low model probability.",
+        "For severe, rapidly worsening, or life-threatening symptoms, seek emergency medical services immediately.",
+        "Keep a record of vaccine, timing, symptoms, treatment and outcome information for clinical discussion.",
+    ]:
+        st.markdown(f"• {item}")
 
-    st.write("Model:", metadata.get("model_type", "—"))
-    st.write("Prediction classes:", metadata.get("number_of_classes", "—"))
-    st.write("Training threshold:", metadata.get("threshold", "—"))
-    st.write(
-        "Training data age range:",
-        f"{DATA_MIN_AGE}–{DATA_MAX_AGE} years"
-    )
-    st.write(
-        "Training vaccination-date range:",
-        f"{DATA_MIN_DATE} to {DATA_MAX_DATE}"
-    )
+    st.markdown("### Urgent warning signs")
+    for item in [
+        "Breathing difficulty or throat/tongue swelling",
+        "Collapse, fainting or loss of consciousness",
+        "Severe chest pain or severe breathlessness",
+        "Progressive neurological weakness or difficulty walking",
+        "Severe persistent headache, significant swelling, unusual bleeding or bruising",
+    ]:
+        st.markdown(f"• {item}")
 
-    st.info(
-        "The patient-facing interface intentionally does not display "
-        "model accuracy or probability scores."
-    )
+    st.markdown("### Model-specific guidance")
+    st.info("For a predicted reaction, use the guidance shown in the Predict tab. Guidance is intentionally conservative and should not replace professional medical assessment.")
 
-    st.markdown("### Important limitation")
-    st.write(
-        "The application identifies the closest specific reaction category "
-        "represented in the project's historical data. It cannot establish "
-        "whether vaccination caused an event and it cannot replace clinical "
-        "evaluation."
-    )
+# ============================================================
+# PROJECT
+# ============================================================
+with tab_project:
+    st.markdown("## ℹ️ Project")
+    st.markdown("### Vaccine Reaction Prediction Framework")
+    st.write("This application uses the trained model and the compiled AEFI dataset to estimate the three highest-probability reaction categories for the entered features.")
 
-    st.markdown("### Why an AEFI is not automatically caused by a vaccine")
-    st.write(
-        "An adverse event following immunization is an event occurring after "
-        "vaccination; it does not by itself establish causation. Causality "
-        "requires clinical and surveillance assessment."
-    )
+    st.markdown("### Current model configuration")
+    model_items = {
+        "Model": metadata.get("model_type", "Not specified"),
+        "Prediction classes": metadata.get("n_classes", metadata.get("num_classes", len(getattr(model, "classes_", [])))),
+        "Threshold": metadata.get("threshold", "Not specified"),
+        "Top-N predictions": TOP_N_REACTIONS,
+        "Date input/features": "Removed",
+        "Reason/Outcome feature": "Enabled",
+    }
+    perf_keys = [
+        ("Accuracy", "accuracy"),
+        ("Macro F1", "macro_f1"),
+        ("Weighted F1", "weighted_f1"),
+    ]
+    for label, key in perf_keys:
+        if key in metadata:
+            model_items[label] = metadata[key]
 
-    st.markdown(
-        "[WHO vaccine safety information]"
-        "(https://www.who.int/news-room/questions-and-answers/item/"
-        "vaccines-and-immunization-vaccine-safety)"
-    )
+    st.dataframe(pd.DataFrame([model_items]), use_container_width=True, hide_index=True)
 
-    st.markdown(
-        "[India Ministry of Health & Family Welfare — AEFI surveillance guidelines]"
-        "(https://www.mohfw.gov.in/sites/default/files/"
-        "National%20AEFI%20Surveillance%20and%20Response%20Operational%20Guidelines%202024.pdf)"
-    )
+    st.markdown("### Input features")
+    st.write("Vaccine, age, sex, age group, Reason for Reporting / Outcome, vaccine-age interaction, and vaccine-sex interaction are used by the current model input pipeline.")
+
+    st.markdown("### Important limitations")
+    st.write("Model probabilities reflect patterns learned from the dataset. They should not be interpreted as individual patient risk, diagnosis, causality, or a substitute for clinical judgment.")
