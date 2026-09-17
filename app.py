@@ -92,15 +92,28 @@ st.markdown(
 @st.cache_resource
 def load_model_and_metadata():
     metadata = joblib.load(METADATA_FILE)
-    model_type = metadata.get("model_type", "Extra Trees")
-    if model_type == "CatBoost":
+
+    # Prefer the model file that is actually present in the repository.
+    # This makes the app work on Streamlit Cloud even when the optional
+    # CatBoost .cbm file is not uploaded.
+    if MODEL_PKL_FILE.exists():
+        model = joblib.load(MODEL_PKL_FILE)
+        return model, metadata
+
+    if MODEL_CBM_FILE.exists():
         if not CATBOOST_AVAILABLE:
-            raise ImportError("CatBoost is required to load this model. Install it using: python -m pip install catboost")
+            raise ImportError(
+                "CatBoost is required to load reaction_model.cbm. "
+                "Install it using: python -m pip install catboost"
+            )
         model = CatBoostClassifier()
         model.load_model(str(MODEL_CBM_FILE))
-    else:
-        model = joblib.load(MODEL_PKL_FILE)
-    return model, metadata
+        return model, metadata
+
+    raise FileNotFoundError(
+        "No trained model file was found. Expected reaction_model.pkl "
+        "or reaction_model.cbm in the repository root."
+    )
 
 try:
     model, metadata = load_model_and_metadata()
