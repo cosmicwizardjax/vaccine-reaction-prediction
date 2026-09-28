@@ -212,7 +212,13 @@ def get_top_reactions(model, X, top_n=TOP_N_REACTIONS):
 
 
 def get_historical_grade(reaction):
-    """Return the most common historical AEFI classification for a reaction."""
+    """Return the AEFI classification recorded for the predicted diagnosis.
+
+    The value is derived only from the supplied Excel dataset. If more than one
+    classification was recorded for the same diagnosis, the most frequently
+    recorded classification is shown and the other recorded classifications are
+    mentioned so that the app does not silently invent a single grade.
+    """
     if dataset is None or GRADE_COLUMN not in dataset.columns or "DIAGNOSIS" not in dataset.columns:
         return "Not available"
 
@@ -232,7 +238,13 @@ def get_historical_grade(reaction):
     d = d[d["GRADE_CLEAN"].notna() & (d["GRADE_CLEAN"] != "")]
     if d.empty:
         return "Not available"
-    return str(d["GRADE_CLEAN"].value_counts().index[0])
+
+    counts = d["GRADE_CLEAN"].value_counts()
+    primary = str(counts.index[0])
+    others = [str(x) for x in counts.index[1:]]
+    if others:
+        return f"{primary} (most common; {', '.join(others)} also recorded)"
+    return primary
 
 
 def get_historical_severity(reaction):
