@@ -22,21 +22,8 @@ SHEET_NAME = "compiled data all"
 
 OTHER_LABEL = "OTHER REPORTED REACTION (PRESENT IN DATASET)"
 TOP_N_REACTIONS = 3
+GRADE_COLUMN = "CLASSIFICATION* BY NATIONAL AEFI COMMITTEE"
 
-REASON_OUTCOME_OPTIONS = [
-    "DEATH",
-    "HOSPITALIZED AND RECOVERED",
-    "SEVERE AND RECOVERED",
-    "HOSPITALIZATION AND RECOVERED",
-    "HOSPITALIZED & RECOVERED",
-    "CLUSTER SIGNIFICANT P/C/HP CONCERN AND RECOVERED",
-    "CLUSTER-HOSPITALIZED AND RECOVERED",
-    "SEVERE & RECOVERED",
-    "HOSPITALI ZED AND RECOVER ED",
-    "SEVERE AND RECEOVERED",
-    "HOSPITALIZED AND DEATH",
-    "CLUSTER-HOSPITALIZED",
-]
 
 # ============================================================
 # PAGE STYLE
@@ -163,14 +150,13 @@ def get_age_group(age):
     return "60+"
 
 
-def create_input(age, sex, vaccine, reason_outcome):
+def create_input(age, sex, vaccine):
     age_group = get_age_group(age)
     return pd.DataFrame([{
         "AGE (IN YEARS)": float(age),
         "SEX": str(sex),
         "VACCINE": str(vaccine),
         "AGE_GROUP": str(age_group),
-        "REASON FOR REPORTING/ OUTCOME": str(reason_outcome),
         "VACCINE_AGE_GROUP": f"{vaccine}_{age_group}",
         "VACCINE_SEX": f"{vaccine}_{sex}",
     }])
@@ -208,6 +194,30 @@ def get_top_reactions(model, X, top_n=TOP_N_REACTIONS):
             "Risk Level": get_risk_level(probability),
         })
     return pd.DataFrame(rows)
+
+
+def get_historical_grade(reaction):
+    """Return the most common historical AEFI classification for a reaction."""
+    if dataset is None or GRADE_COLUMN not in dataset.columns or "DIAGNOSIS" not in dataset.columns:
+        return "Not available"
+
+    d = dataset.copy()
+    d["DIAGNOSIS_CLEAN"] = clean_series(d["DIAGNOSIS"])
+    d["GRADE_CLEAN"] = clean_series(d[GRADE_COLUMN])
+
+    reaction_clean = str(reaction).strip().upper()
+    if reaction_clean == OTHER_LABEL:
+        counts = d["DIAGNOSIS_CLEAN"].value_counts()
+        threshold = int(metadata.get("threshold", 25))
+        common = set(counts[counts >= threshold].index)
+        d = d[~d["DIAGNOSIS_CLEAN"].isin(common)]
+    else:
+        d = d[d["DIAGNOSIS_CLEAN"] == reaction_clean]
+
+    d = d[d["GRADE_CLEAN"].notna() & (d["GRADE_CLEAN"] != "")]
+    if d.empty:
+        return "Not available"
+    return str(d["GRADE_CLEAN"].value_counts().index[0])
 
 
 def get_reaction_guidance(reaction):
@@ -263,21 +273,10 @@ with tab_predict:
     with c3:
         sex = st.selectbox("Sex", ["MALE", "FEMALE"])
 
-    reason_outcome = st.selectbox(
-        "Reason for Reporting / Outcome",
-        ["— Select —"] + REASON_OUTCOME_OPTIONS,
-        index=0,
-        help="Options are derived from the compiled AEFI dataset after whitespace/newline normalization.",
-    )
-
     predict_clicked = st.button("✨ Predict Possible Reactions", type="primary", use_container_width=True)
 
     if predict_clicked:
-        if reason_outcome == "— Select —":
-            st.warning("Please select a Reason for Reporting / Outcome before prediction.")
-            st.stop()
-
-        X = create_input(age, sex, vaccine, reason_outcome)
+        X = create_input(age, sex, vaccine)
         try:
             top_reactions = get_top_reactions(model, X)
         except Exception as e:
@@ -302,6 +301,7 @@ with tab_predict:
                 st.metric("Model Probability", f"{percentage:.2f}%")
             with m2:
                 st.metric("Likelihood Category", likelihood)
+            st.caption(f"**AEFI Grade / Classification:** {get_historical_grade(reaction)}")
             st.progress(min(max(probability, 0.0), 1.0))
 
         st.divider()
@@ -320,6 +320,7 @@ with tab_predict:
 
         st.subheader("📋 Prediction Summary")
         summary_df = top_reactions[["Rank", "Reaction", "Probability (%)", "Risk Level"]].copy()
+        summary_df["AEFI Grade / Classification"] = summary_df["Reaction"].map(get_historical_grade)
         summary_df["Probability (%)"] = summary_df["Probability (%)"].map(lambda x: f"{x:.2f}%")
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
@@ -432,7 +433,8 @@ with tab_project:
         "Threshold": metadata.get("threshold", "Not specified"),
         "Top-N predictions": TOP_N_REACTIONS,
         "Date input/features": "Removed",
-        "Reason/Outcome feature": "Enabled",
+        "Reason/Outcome feature": "Removed",
+        "AEFI grade source": GRADE_COLUMN,
     }
     perf_keys = [
         ("Accuracy", "accuracy"),
@@ -446,7 +448,10 @@ with tab_project:
     st.dataframe(pd.DataFrame([model_items]), use_container_width=True, hide_index=True)
 
     st.markdown("### Input features")
-    st.write("Vaccine, age, sex, age group, Reason for Reporting / Outcome, vaccine-age interaction, and vaccine-sex interaction are used by the current model input pipeline.")
+    st.write("Vaccine, age, sex, age group, vaccine-age interaction, and vaccine-sex interaction are used by the current model input pipeline. Reason for Reporting / Outcome is not used as an input.")
+
+    st.markdown("### AEFI Grade / Classification")
+    st.write("For each of the top three predicted reactions, the app displays the most common historical value of 'CLASSIFICATION* BY NATIONAL AEFI COMMITTEE' for that reaction in the supplied Excel dataset.")
 
     st.markdown("### Important limitations")
     st.write("Model probabilities reflect patterns learned from the dataset. They should not be interpreted as individual patient risk, diagnosis, causality, or a substitute for clinical judgment.")
