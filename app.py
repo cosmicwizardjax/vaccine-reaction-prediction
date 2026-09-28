@@ -55,6 +55,21 @@ st.markdown(
         margin: 10px 0 18px;
     }
     .section-title { margin-top: 8px; }
+    .reaction-card {
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        border-radius: 14px;
+        padding: 18px 20px;
+        margin: 12px 0;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    }
+    .reaction-title { font-size: 1.18rem; font-weight: 700; margin-bottom: 14px; }
+    .reaction-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+    .reaction-grid > div { background: white; border-radius: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; }
+    .reaction-grid .label { display: block; font-size: 0.78rem; color: #64748b; margin-bottom: 4px; }
+    .reaction-grid strong { font-size: 1rem; }
+    .reaction-text { margin-top: 9px; line-height: 1.5; }
+    @media (max-width: 800px) { .reaction-grid { grid-template-columns: 1fr; } }
     </style>
     """,
     unsafe_allow_html=True,
@@ -220,6 +235,43 @@ def get_historical_grade(reaction):
     return str(d["GRADE_CLEAN"].value_counts().index[0])
 
 
+def get_historical_severity(reaction):
+    """Summarize the highest level of reported outcome for this reaction, without counts."""
+    if dataset is None or "REASON FOR REPORTING/ OUTCOME" not in dataset.columns or "DIAGNOSIS" not in dataset.columns:
+        return "Not available", "No historical outcome information is available in the dataset."
+
+    d = dataset.copy()
+    d["DIAGNOSIS_CLEAN"] = clean_series(d["DIAGNOSIS"])
+    d["OUTCOME_CLEAN"] = clean_series(d["REASON FOR REPORTING/ OUTCOME"])
+    reaction_clean = str(reaction).strip().upper()
+
+    if reaction_clean == OTHER_LABEL:
+        counts = d["DIAGNOSIS_CLEAN"].value_counts()
+        threshold = int(metadata.get("threshold", 25))
+        common = set(counts[counts >= threshold].index)
+        d = d[~d["DIAGNOSIS_CLEAN"].isin(common)]
+    else:
+        d = d[d["DIAGNOSIS_CLEAN"] == reaction_clean]
+
+    outcomes = set(d["OUTCOME_CLEAN"].dropna())
+    if not outcomes:
+        return "Not available", "No historical outcome information is available in the dataset."
+
+    has_death = any("DEATH" in x for x in outcomes)
+    has_hospital = any("HOSPITAL" in x or "HOSPITALI" in x for x in outcomes)
+    has_severe = any("SEVERE" in x for x in outcomes)
+
+    if has_death:
+        return "Very High", "Hospitalization, severe outcomes and death have been reported for this reaction."
+    if has_hospital and has_severe:
+        return "High", "Hospitalization and severe outcomes have been reported for this reaction."
+    if has_hospital:
+        return "Moderate–High", "Hospitalization has been reported for this reaction."
+    if has_severe:
+        return "Moderate–High", "Severe outcomes have been reported for this reaction."
+    return "Lower", "No severe, hospitalized, or fatal outcome is represented in the available records for this reaction."
+
+
 def get_reaction_guidance(reaction):
     key = str(reaction).strip().upper()
     guidance = {
@@ -240,18 +292,11 @@ def get_reaction_guidance(reaction):
 
 
 def get_general_precautions(top_reactions):
-    reactions = {str(x).strip().upper() for x in top_reactions["Reaction"]}
-    precautions = [
-        "This is a dataset-based prediction, not a diagnosis or confirmation that the reaction will occur.",
-        "Observe the person's actual symptoms and clinical condition; do not act on the prediction alone.",
-        "For severe or rapidly worsening symptoms, seek urgent medical assessment/emergency care.",
-        "Record the vaccine, timing of symptoms, symptoms observed, and outcome information for discussion with a healthcare professional.",
+    return [
+        "Monitor the person's actual symptoms and clinical condition; do not act on the prediction alone.",
+        "Seek medical advice if symptoms are persistent, severe, or worsening.",
+        "For breathing difficulty, loss of consciousness, severe swelling, or other rapidly worsening symptoms, seek emergency care immediately.",
     ]
-    if "ANAPHYLAXIS" in reactions:
-        precautions.append("Breathing difficulty, throat/tongue swelling, fainting, or rapid deterioration should be treated as an emergency.")
-    if "GUILLAIN BARRE SYNDROME" in reactions or "THROMBOSIS WITH THROMBOCYTOPENIA SYNDROME" in reactions:
-        precautions.append("Do not delay clinical evaluation for progressive neurological symptoms, severe persistent headache, breathing difficulty, significant swelling, or unusual bleeding/bruising.")
-    return precautions
 
 # ============================================================
 # TABS
@@ -292,38 +337,28 @@ with tab_predict:
         for _, row in top_reactions.iterrows():
             rank = int(row["Rank"])
             reaction = row["Reaction"]
-            probability = float(row["Probability"])
             percentage = float(row["Probability (%)"])
-            likelihood = row["Risk Level"]
-            st.markdown(f"### {medals.get(rank, '•')} #{rank} — {reaction}")
-            m1, m2 = st.columns(2)
-            with m1:
-                st.metric("Model Probability", f"{percentage:.2f}%")
-            with m2:
-                st.metric("Likelihood Category", likelihood)
-            st.caption(f"**AEFI Grade / Classification:** {get_historical_grade(reaction)}")
-            st.progress(min(max(probability, 0.0), 1.0))
+            grade = get_historical_grade(reaction)
+            severity, historical_outcome = get_historical_severity(reaction)
 
-        st.divider()
-        st.subheader("💡 Advice / Suggestion Based on Predicted Reaction")
-        primary_reaction = top_reactions.iloc[0]["Reaction"]
-        st.info(f"**Primary model prediction: {primary_reaction}**\n\n{get_reaction_guidance(primary_reaction)}")
-
-        with st.expander("View guidance for Prediction #2 and #3"):
-            for _, row in top_reactions.iloc[1:].iterrows():
-                st.markdown(f"**#{int(row['Rank'])} — {row['Reaction']}**")
-                st.write(get_reaction_guidance(row["Reaction"]))
+            st.markdown(f"""
+            <div class="reaction-card">
+                <div class="reaction-title">{medals.get(rank, '•')} #{rank} — {reaction}</div>
+                <div class="reaction-grid">
+                    <div><span class="label">Prediction</span><strong>{percentage:.2f}%</strong></div>
+                    <div><span class="label">AEFI Classification</span><strong>{grade}</strong></div>
+                    <div><span class="label">Potential seriousness</span><strong>{severity}</strong></div>
+                </div>
+                <div class="reaction-text"><b>Historical outcome:</b> {historical_outcome}</div>
+                <div class="reaction-text"><b>Care:</b> {get_reaction_guidance(reaction)}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.subheader("🛡️ General Precautions")
         for precaution in get_general_precautions(top_reactions):
             st.markdown(f"• {precaution}")
 
-        st.subheader("📋 Prediction Summary")
-        summary_df = top_reactions[["Rank", "Reaction", "Probability (%)", "Risk Level"]].copy()
-        summary_df["AEFI Grade / Classification"] = summary_df["Reaction"].map(get_historical_grade)
-        summary_df["Probability (%)"] = summary_df["Probability (%)"].map(lambda x: f"{x:.2f}%")
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-
+        st.caption("Historical outcome information is based on reported cases in the dataset and does not predict the outcome for an individual patient.")
         st.warning("⚠️ This application provides dataset-based decision support only. A prediction does not establish causality, diagnosis, or that an event will occur. For emergencies, seek emergency medical services immediately.")
 
 # ============================================================
