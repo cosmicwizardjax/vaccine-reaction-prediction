@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_PKL_FILE = BASE_DIR / "reaction_model.pkl"
 MODEL_CBM_FILE = BASE_DIR / "reaction_model.cbm"
 METADATA_FILE = BASE_DIR / "model_metadata.pkl"
-DATA_FILE = BASE_DIR / "data" / "final ugrc(1).xlsx"
+DATA_FILE = BASE_DIR / "data" / "final ugrc (1).xlsx"
 SHEET_NAME = "compiled data all"
 
 OTHER_LABEL = "OTHER REPORTED REACTION (PRESENT IN DATASET)"
@@ -380,7 +380,7 @@ with tab_analytics:
     st.markdown("## 📊 Interactive Analytics")
     if dataset is None:
         st.warning(f"Analytics dataset was not found at: {DATA_FILE}")
-        st.info("Keep the Excel file in the project's data folder as 'final ugrc(1).xlsx' for the analytics tab to populate.")
+        st.info("Keep the Excel file in the project's data folder as 'final ugrc (1).xlsx' for the analytics tab to populate.")
     else:
         df = dataset.copy()
         for col in ["SEX", "VACCINE", "REASON FOR REPORTING/ OUTCOME", "DIAGNOSIS", "CLASSIFICATION* BY NATIONAL AEFI COMMITTEE"]:
